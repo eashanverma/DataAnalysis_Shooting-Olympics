@@ -1,0 +1,447 @@
+---
+title: "<span style='font-size: 40px; font-weight: bold;'>Global Dynamics of Paris
+  Olympics 2024- Shooting</span>"
+author: "<span style='font-size: 14px'>Eashan Verma</span>"
+date: "<span style='font-size: 14px'>2024-12-12</span>"
+output:
+  html_document:
+    code_folding: hide
+    fig_caption: true
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,warning = FALSE, message = FALSE)
+```
+
+```{r,include=FALSE}
+library(ggplot2)
+library(dplyr)
+library(openxlsx)
+library(gganimate)
+library(tidyr)
+library(reshape2)
+library(plotly)
+library(tidyverse)
+library(corrplot)
+library(readxl)
+library(zoo)
+library(readr)
+library(lubridate)
+library(stringr)
+library(plotly)
+library(maps)
+library(countrycode)
+```
+
+```{r code, include=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+data <- read.csv("Shooting.csv")
+data$date <- ymd_hms(data$date)
+```
+
+### Data Analysis of Shooting data from Paris Olympic 2024 {.tabset}
+#### Introduction
+
+Shooting has been a cornerstone of the Olympic Games since their inception, embodying the highest standards of precision, concentration, and discipline in competitive sports. This multifaceted sport encompasses a wide range of disciplines, each demanding distinct skills and techniques, from rifle and pistol events to shotgun disciplines like trap and skeet shooting. Over the decades, shooting has attracted top athletes from around the world, evolving alongside broader trends in sports such as the increasing participation of women and the globalization of talent.
+
+This project aims to explore the Olympic shooting events from multiple angles, focusing on critical dimensions like participation rates, gender representation, and athlete performance. Through data analysis, the study seeks to reveal important trends that illustrate the evolving nature of this discipline in the Olympics, while emphasizing its inclusivity, competitiveness, and the unyielding spirit of international cooperation. The analysis not only looks at individual athletes and their performances but also highlights the role each participating country plays in shaping the history of the Games. The result is a broader understanding of how shooting contributes to the Olympic narrative—one that transcends borders, showcases diverse talent, and reinforces the core ideals of excellence and fair competition. By examining these aspects, the study aims to provide valuable insights into the dynamics of Olympic participation, representation, and achievement in one of the most prestigious global sporting events.
+
+The analysis is driven by four primary objectives:
+
+**Research Question**
+
+1. How many genders participate in the game across different disciplines.
+
+2. What is the maximum number of points an athlete can earn based on the discipline.  
+
+3. How is global involvement represented in shooting competition.
+
+4. How is the global distribution of medals across different countries.
+
+#### Data Wrangling 
+In this analysis, we set out to clean and process a dataset containing information on participants, events, and results from shooting competitions. Our primary goal was to prepare the data for meaningful analysis and insights. The first step involved handling missing data: we removed any rows where crucial information, such as rank or result, was missing. In addition, we replaced missing qualification_mark values with zero, ensuring that there would be no missing data in the dataset, which could hinder further analysis.
+
+Next, we standardized several key columns to ensure consistency. This included standardizing event names, discipline names, and participant countries to title case, eliminating inconsistencies caused by variations in capitalization or extra spaces. We also converted categorical variables like gender, participant_type, and event_stage into factors. This makes the data easier to analyze and visualize. For instance, we defined the gender column with explicit levels (M for Male, W for Women, and X for Team). We then removed duplicate rows based on participant_code and event_code, ensuring that each participant's event data was unique.
+
+We also created a new feature, days_since_start, which calculates the number of days since the start of the Olympics. This allows us to analyze trends over time. We ensured the rank column was numeric for proper sorting and analysis, and filtered the data to include only relevant event stages, such as qualifications and finals. With the data cleaned and organized, we conducted two key analyses: determining which country had the highest number of participants and which event had the highest average score (in terms of points). We then visualized the distribution of participants by gender for each event using a stacked bar chart.
+
+Finally, we displayed the top findings, which included the country with the highest participation and the event with the highest average score. This set the stage for further insights or actionable decisions based on the dataset.
+```{r}
+# Step 1: Check for missing values (NA) in the dataset before cleaning
+cat("Missing Values in Each Column Before Cleaning:\n")
+missing_values_before <- sapply(data, function(x) sum(is.na(x)))  # Count NAs in each column
+print(missing_values_before)
+
+# Clean the data
+data_cleaned <- data %>%
+  filter(!is.na(rank), !is.na(result)) %>%  # Remove rows with missing rank or result
+  mutate(qualification_mark = ifelse(is.na(qualification_mark), 0, qualification_mark))  # Fill missing qualification marks with 0
+
+# Convert 'date' to proper date format
+data_cleaned <- data_cleaned %>%
+  mutate(date = ymd_hms(date))  # Ensure 'date' is in the correct format
+
+# Standardize the 'event_name', 'discipline_name', and 'participant_country' columns
+data_cleaned <- data_cleaned %>%
+  mutate(event_name = str_to_title(str_trim(event_name)),
+         discipline_name = str_to_title(str_trim(discipline_name)),
+         participant_country = str_to_title(str_trim(participant_country)))
+
+# Convert categorical variables to factors
+data_cleaned <- data_cleaned %>%
+  mutate(gender = factor(gender, levels = c("M", "W", "X")),  # Assuming 'M' = Male, 'W' = Women, 'X' = Team
+         participant_type = factor(participant_type),
+         stage = factor(stage),
+         event_stage = factor(event_stage))
+
+# Remove duplicates based on participant_code and event_code
+data_cleaned <- data_cleaned %>%
+  distinct(participant_code, event_code, .keep_all = TRUE)
+
+# Create new feature: 'days_since_start' for time-based analysis
+start_olympics <- ymd("2024-07-27")  # Olympics start date
+data_cleaned <- data_cleaned %>%
+  mutate(days_since_start = as.numeric(difftime(date, start_olympics, units = "days")))
+
+# Convert 'rank' column to numeric
+data_cleaned <- data_cleaned %>%
+  mutate(rank = as.numeric(rank))  # Convert rank to numeric
+
+# Filter data for relevant analysis stages
+data_cleaned_qual <- data_cleaned %>%
+  filter(event_stage %in% c("Qualification", "Qualification - Day 1", "Qualification - Day 2", 
+                           "Qualification Precision", "Qualification Rapid", "Stage 1", 
+                           "Stage 2", "Final", "Bronze Medal Match", "Gold Medal Match"))
+
+# Step 2: Check for missing values (NA) in the cleaned dataset
+cat("\nMissing Values in Each Column After Cleaning:\n")
+missing_values_after <- sapply(data_cleaned, function(x) sum(is.na(x)))  # Count NAs in each column after cleaning
+print(missing_values_after)
+
+# Find which country has the highest number of participants
+country_participants <- data_cleaned %>%
+  group_by(participant_country) %>%
+  summarise(count = n()) %>%
+  arrange(desc(count))
+
+# Find the event with the highest average score (points)
+average_score_event <- data_cleaned %>%
+  group_by(event_name) %>%
+  summarise(avg_score = mean(as.numeric(result), na.rm = TRUE)) %>%
+  arrange(desc(avg_score))
+```
+
+
+We aim to clean and standardize the event_name column in the dataset to ensure consistent categorization and simplify further analysis. The code performs several transformations on the event_name column by removing gender-specific terms like Men, Women, or Team to avoid redundant event names, and simplifying event names like "Air Pistol" to just "Pistol" and "Air Rifle" to "Rifle" for better consistency. Additionally, terms like "Rifle 3 Positions" are shortened to "Rifle", and "Rapid Fire Pistol" is standardized to "Pistol". These changes help consolidate events with similar characteristics under a unified name, making the data cleaner and easier to analyze. With this cleaned data, we can proceed to explore insights such as the countries with the highest number of participants, events with the highest average scores, and the distribution of participants by gender across different events, which helps provide a clearer understanding of trends in the competition.
+```{r}
+#6 Mutating the values
+# Apply transformations to event_name
+data_cleaned <- data_cleaned %>%
+  mutate(event_name = gsub("( Men| Women| Mixed Team| Mixed)$", "", event_name),  # Remove gender and 'Mixed Team'
+         event_name = gsub(" Air Pistol$", " Pistol", event_name),  # Change 'Air Pistol' to 'Pistol'
+         event_name = gsub(" Air Rifle$", " Rifle", event_name),   # Change 'Air Rifle' to 'Rifle'
+         event_name = gsub(" Rifle 3 Positions$", " Rifle", event_name),  # 'Rifle 3 Positions' to 'Rifle'
+         event_name = gsub(" Rapid Fire Pistol$", " Pistol", event_name))  # 'Rapid Fire Pistol' to 'Pistol'
+         #participant_country = gsub("T√ºrkiye$", "Turkey", participant_country))  
+# Output a summary in a single line
+cat("Changes applied: Removed gender and mixed terms, standardized event names. Example: ", head(data_cleaned$event_name, 5), "\n")
+```
+
+
+In this step, we cleaned the participant_country column by replacing the incorrectly encoded country name "T√ºrkiye" with the correct version "Turkey". This ensures consistency in the dataset, avoiding issues with special characters or encoding errors. After making the replacement, we printed a simple message confirming that "T√ºrkiye" was changed to "Turkey" for clarity and verification.
+```{r}
+# Replace "T√ºrkiye" with "Turkey" in the 'participant_country' column
+data_cleaned$participant_country <- gsub("T√ºrkiye", "Turkey", data_cleaned$participant_country)
+print("T√ºrkiye changed to Turkey")
+```
+
+#### Analysis
+<span style="font-size: 24px; color: #FF6347;">Distribution of Participants by Gender for Each Event and Discipline</span>
+
+Gender equality has been a core value of the modern Olympic movement. By examining participation across genders in various disciplines, this project seeks to shed light on the strides made toward inclusivity and the areas where disparities may still exist.
+
+This bar chart illustrates the number of participants in various shooting events, categorized by gender. The events listed on the x-axis include "10m Pistol," "10m Rifle," "25m Pistol," "50m Rifle," "Skeet," and "Trap." The y-axis represents the number of participants, ranging from 0 to 125.
+
+Each bar is divided into three segments, representing different genders: 
+- Blue for males (M)
+- Pink for females (W)
+- Green for teams (X)
+
+For example, in the "10m Pistol" event, there are 33 males, 44 females, and 17 participants in the other category. The "10m Rifle" event has the highest total number of participants, with 49 males, 43 females, and 28 in the other category. On the other hand, the "Trap" event has the lowest total number of participants, with 30 males and 30 females, and no participants in the other category.
+
+This chart provides a clear visual representation of gender distribution across different shooting events, useful for analyzing participation trends and ensuring gender diversity in sports.
+
+
+```{r fig1, fig.cap='<div style="text-align: Left; font-size: 12px; font-weight: bold;">Figure 1: Stacked Bar Graph showing the distribution of participants by gender for each event and discipline</div>'}
+# Filter the data to exclude missing values in gender, discipline_name, and event_name
+filtered_data <- data_cleaned %>%
+  filter(!is.na(gender) & !is.na(discipline_name) & !is.na(event_name)) %>%
+  mutate(gender = factor(gender, levels = c("M", "W", "X")))  # Ensure correct factor levels for gender
+
+# Group by event_name, discipline_name, and gender, and summarize participant count
+filtered_data <- filtered_data %>%
+  group_by(event_name, discipline_name, gender) %>%
+  summarize(participant_count = n(), .groups = "drop")  # Ungroup after summarizing
+
+# ---- Stacked Bar Chart with Text Labels ----
+ggplot(filtered_data, aes(x = event_name, y = participant_count, fill = gender)) + 
+  geom_bar(stat = "identity", position = "stack", color = "black", alpha = 0.7) +  # Stacked bars
+  facet_wrap(~ discipline_name, scales = "free_y") +  # Facet by discipline_name
+  labs(title = "Distribution of Participants by Gender for Each Event and Discipline",
+       x = "Event Name", y = "Number of Participants",
+       fill = "Participants") +  # Add a fill legend for gender
+  scale_fill_manual(values = c("M" = "blue", "W" = "pink", "X" = "green"), 
+                    labels = c("M" = "Men", "W" = "Women", "X" = "Teams")) +  # Update legend labels
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels
+        strip.text = element_text(size = 10)) +  # Customize facet labels
+  
+  # Adding text labels with participant counts
+  geom_text(aes(label = participant_count), 
+            position = position_stack(vjust = 0.5),  # Place labels in the middle of each stack
+            color = "black", size = 3)
+```
+
+<span style="font-size: 24px; color: #FF6347;">Gender Scores by Stage and Discipline</span>
+
+The graph titled **"Gender Scores by Stage and Discipline"** displays the total scores of different genders (Men, Women, and Mixed Teams) across various stages of the Olympic shooting event. The **x-axis** represents the stages in sequential order: Qualification, Qualification - Day 1, Qualification - Day 2, Qualification Precision, Qualification Rapid, Stage 1, Stage 2, Final, Bronze Medal Match, and Gold Medal Match. The **y-axis** indicates the total score, ranging from 0 to 70,000.
+
+The graph uses different colors and markers to represent each gender:
+
+1. **Men** (M) are represented by a blue line with circular markers.
+
+2. **Women** (W) are represented by a pink line with circular markers.
+
+3. **Teams** (X) are represented by a green line with circular markers.
+
+The graph shows that the total scores for each gender decrease as the stages progress, indicating the elimination of athletes as the competition moves towards the final stages. For example, the men's total score starts at around 65,000 in the Qualification stage and drops significantly by the Gold Medal Match stage. Similarly, the women's and mixed teams' scores also decrease over the stages.
+
+**Example of what the numbers are expressing:**
+a. In the Qualification stage, the men's total score is approximately 65,000.
+
+b. In the Qualification - Day 1 stage, the men's total score drops to around 20,000.
+
+c. By the Final stage, the men's total score is around 10,000.
+
+d. The women's total score in the Qualification stage is around 20,000, and it fluctuates slightly before dropping to around 5,000 by the Final stage.
+
+e. The mixed teams' total score starts at around 20,000 in the Qualification stage and gradually decreases to around 5,000 by the Gold Medal Match stage.
+
+This graph is interesting and relevant as it visually represents the performance and elimination of athletes in the Olympic shooting event, highlighting the differences in scores between men, women, and mixed teams across various stages.
+```{r fig2, fig.cap='<div style="text-align: Left; font-size: 12px; font-weight: bold;">Figure 2: Line Graph showing the gender scores by stage and disciplinee</div>'}
+
+# Define the correct order of stages
+stage_order <- c(
+  "Qualification",
+  "Qualification - Day 1", 
+  "Qualification - Day 2", 
+  "Qualification Precision", 
+  "Qualification Rapid", 
+  "Stage 1", 
+  "Stage 2", 
+  "Final", 
+  "Bronze Medal Match",
+  "Gold Medal Match"
+)
+
+# Filter and process the data
+filtered_data <- data %>%
+  filter(!is.na(gender) & !is.na(stage) & !is.na(discipline_name) & !is.na(result)) %>%  # Ensure no missing values
+  mutate(stage = factor(stage, levels = stage_order),  # Ensure stages are ordered correctly
+         gender = factor(gender, levels = c("M", "W", "X"))) %>%  # Ensure gender is a factor with correct levels
+  group_by(stage, gender, discipline_name) %>%
+  summarize(total_score = sum(result, na.rm = TRUE), .groups = "drop")  # Sum of results per group
+
+# -----------------------------
+# Visualization: Line Graph
+# -----------------------------
+
+# Plot the line graph with stages ordered as defined
+ggplot(filtered_data, aes(x = stage, y = total_score, color = gender, group = gender)) + 
+  # Add lines to show the trend for each gender
+  geom_line(size = 1.2, alpha = 0.8) +  # Line thickness and transparency
+  geom_point(size = 3, shape = 16) +  # Points to mark individual observations
+  facet_wrap(~ discipline_name) +  # Separate the graph by discipline name
+  labs(
+    title = "Gender Scores by Stage and Discipline",  # Title of the plot
+    x = "Stage",   # X-axis label: Stage of competition
+    y = "Total Score",  # Y-axis label: Total score for each gender
+    color = "Gender"   # Legend title for colors
+  ) +
+  # Custom color mapping for gender
+  scale_color_manual(values = c("M" = "blue", "W" = "pink", "X" = "green")) +  
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels for better readability
+    plot.title = element_text(hjust = 0.5),  # Center the title
+    legend.position = "top"  # Position the legend at the top
+  )
+
+```
+
+
+<span style="font-size: 24px; color: #FF6347;">Worldwide Involvement in Shooting Competition</span>
+  
+The graph presents a world map that visually represents the participation of various countries in shooting events, with each country color-coded according to the total points it has earned. The color gradient ranges from purple, indicating lower points, to yellow, representing higher points. When you hover the cursor over a country, a tooltip appears, displaying key information such as the country’s name, the number of athletes who participated, and the total points scored by that country. 
+
+For instance, consider the country China has the maximum point earned i.e. 11406.1 with 24 athletes taking part in the competition, followd by India with 11300.6 with 24 athletes, respectively with the other countries participation.
+
+This interactive map provides an engaging and intuitive way to explore and compare the performances of different countries in shooting events. It effectively showcases the global spread of success, allowing users to quickly identify which countries have performed best and how many athletes contributed to their achievements. By offering a clear, color-coded view of global participation and performance, this visualization enhances the understanding of how nations fare in this competitive sport.
+
+```{r fig3, fig.cap='<div style="text-align: Left; font-size: 12px; font-weight: bold;">Figure 3: World Map showing the worldwide involvement in shooting competition</div>'}
+country_scores <- data_cleaned %>%
+  group_by(participant_country) %>%
+  summarise(
+    Total_Points = sum(result, na.rm = TRUE),
+    Num_Athletes = n_distinct(participant_name)  # Count unique athletes per country
+  )
+
+# Convert country codes (ISO 3166-1 alpha-3) to country names using 'countrycode'
+country_scores <- country_scores %>%
+  mutate(country_name = countrycode(participant_country, origin = "iso3c", destination = "country.name"))
+
+# Get world map data
+world <- map_data("world")
+
+# Add participation, athlete count, and country name to the map data
+world <- world %>%
+  left_join(country_scores, by = c("region" = "participant_country")) %>%
+  mutate(
+    Participation = ifelse(!is.na(Total_Points), "Participated", "Did Not Participate")
+  )
+
+# Create the base ggplot map with the number of athletes and total points
+ggplot_map <- ggplot(world, aes(x = long, y = lat, group = group, fill = Total_Points, text = paste(
+  "Country:", region,
+  "<br>Total Points:", Total_Points,
+  "<br>Num Athletes:", Num_Athletes
+))) +
+  geom_polygon(color = "gray30", size = 0.3) +  # Set border color and size (thinner borders)
+  scale_fill_gradient(
+    low = "#9b59b6",  # Purple for lower points
+    high = "#f1c40f",  # Yellow for higher points
+    na.value = "gray80",  # For countries with no data
+    name = "Total Points"
+  ) +
+  theme_minimal() +
+  labs(
+    title = "Countries Participating in Shooting Event",
+    subtitle = "Total Points Scored by Each Country",
+    fill = "Total Points"
+  )
+
+# Convert the ggplot to an interactive plot with plotly
+interactive_map <- ggplotly(ggplot_map, tooltip = "text") %>%
+  layout(
+    title = "Countries Participating in Shooting Event",
+    hoverlabel = list(
+      bgcolor = "white", 
+      font = list(size = 12, color = "black")
+    )  # Style hover label with white background and black text
+  )
+
+# Display the interactive map
+interactive_map
+
+```
+
+
+<span style="font-size: 24px; color: #FF6347;">Global Medal Distribution by Country</span>
+
+The graph provides a visual representation of the total number of medals won by countries around the world. Each country is color-coded based on the number of medals they have won, with a gradient scale ranging from light beige (indicating 1 medal) to dark red (indicating 6 medals). Countries shaded in gray have not won any medals.
+
+When you hover your cursor over any country on the map, a tooltip will appear displaying the name of the country and the exact number of medals they have won. This interactive feature allows for a detailed and user-friendly exploration of the data.
+
+For instance, consider the country China has topped the medal tally with 6 medals followed by Itally with 4 medals.
+
+The graph highlights the global distribution of athletic success, showcasing which countries have excelled in winning medals and which have yet to achieve this milestone. This visualization is particularly useful for identifying patterns and trends in international sports achievements.
+
+```{r fig4, fig.cap='<div style="text-align: Left; font-size: 12px; font-weight: bold;">Figure 4: World Map showing the global medal distribution by country</div>'}
+# Prepare the medal distribution data
+medal_distribution <- data_cleaned %>%
+  filter(rank %in% c(1, 2, 3)) %>%
+  mutate(medal = ifelse(rank == 1, "Gold", ifelse(rank == 2, "Silver", "Bronze"))) %>%
+  group_by(participant_country, medal) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  arrange(desc(count))
+
+# Get world map data
+world <- map_data("world")
+
+# Create a summarized medal distribution by country
+medal_summary <- medal_distribution %>%
+  spread(medal, count, fill = 0) %>%  # Spread medals into separate columns
+  mutate(Total_Medals = Gold + Silver + Bronze)  # Total medals for each country
+
+# Merge world map data with medal summary
+world_map_data <- world %>%
+  left_join(medal_summary, by = c("region" = "participant_country"))
+
+# Ensure participant_country is part of the merged data
+world_map_data <- world_map_data %>%
+  mutate(Tooltip = paste("Country: ", region, 
+                         "<br>Total Medals: ", Total_Medals))
+
+# Create the choropleth map
+ggplot_map <- ggplot(world_map_data, aes(x = long, y = lat, group = group, fill = Total_Medals)) +
+  geom_polygon(color = "black", size = 0.3, aes(text = Tooltip)) +  # Custom text for tooltip
+  scale_fill_gradient(
+    low = "lightyellow",  # Low values (few medals) will be light yellow
+    high = "darkred",     # High values (many medals) will be dark red
+    na.value = "gray80",  # Missing data countries will be gray
+    name = "Total Medals"
+  ) +
+  theme_minimal() +
+  labs(
+    title = "Medal Distribution by Country",
+    subtitle = "Total Medals (Gold, Silver, and Bronze)",
+    fill = "Total Medals"
+  ) +
+  theme(
+    panel.grid = element_blank(),
+    axis.title = element_blank(),
+    axis.text = element_blank(),
+    plot.title = element_text(hjust = 0.5, size = 16),
+    plot.subtitle = element_text(hjust = 0.5, size = 12)
+  )
+
+# Convert ggplot to an interactive plot with plotly
+interactive_map <- ggplotly(ggplot_map, tooltip = "text") %>%
+  layout(
+    title = "Medal Distribution by Country",
+    subtitle = "Total Medals (Gold, Silver, and Bronze)",
+    hoverlabel = list(
+      bgcolor = "white", 
+      font = list(size = 12, color = "black")
+    )  # Style hover label with white background and black text
+  )
+
+# Display the interactive map
+interactive_map
+
+```
+
+#### Conclusion
+
+Shooting has been a fundamental part of the Olympic Games since their early days, representing the highest level of skill, precision, and mental focus in the world of competitive sports. As a diverse sport encompassing various disciplines, from rifle and pistol to shotgun events like trap and skeet shooting, it continues to attract top athletes from across the globe. Over the years, shooting has evolved in line with broader trends in sports, including increased female participation and the globalization of talent.
+
+This project has explored Olympic shooting events from multiple perspectives, examining crucial factors such as participation rates, gender representation, athlete performance, and the global distribution of medals. Through in-depth data analysis, we have uncovered key trends that reveal the evolving nature of shooting in the Olympic context. Our findings highlight not only the inclusivity and competitiveness of the sport but also its role in fostering international cooperation.
+
+The study aimed to answer four primary research questions:
+
+1. **Gender Participation:** We analyzed the representation of different genders across various shooting disciplines, noting the growing inclusivity and diversity within the sport. This includes examining the participation rates in events such as women’s skeet shooting, mixed team events, and the increasing presence of female athletes in traditionally male-dominated events like rifle and pistol shooting.
+
+2. **Maximum Points:** We explored the maximum points an athlete can achieve in different shooting disciplines, taking into account the specific scoring systems for events like 10m Air Rifle, 50m Rifle Prone, 10m Air Pistol, and Skeet. Each discipline has unique scoring methods, with rifle and pistol events requiring precise shots at targets at varying distances, while shotgun events focus on the athlete's speed and accuracy in hitting moving targets. The project also identified the maximum score achievable in each discipline during Olympic competition.
+
+3. **Event Types and Shooting Equipment:** The project delved into the various shooting events featured in the Olympics, such as Rifle (Air and 50m Prone), Pistol (10m and Rapid-Fire), and Shotgun (Trap and Skeet). Each event requires different types of rifles, pistols, and shotguns, and athletes must demonstrate unique sets of skills. For instance, athletes in 10m Air Rifle events use .177 caliber air rifles, while 50m Rifle Prone involves precision shots from a prone position using .22 caliber rifles. Similarly, in Trap and Skeet events, shooters use shotguns to hit flying clay targets, demanding exceptional timing and reflexes.
+
+4. **Global Involvement:** We examined the global participation in shooting events, looking at the countries that excel in this sport and the regions where shooting has grown in prominence. The analysis highlighted countries with long-standing traditions in shooting sports, such as the United States, China, and Russia, as well as emerging nations that have made significant strides in recent Olympics. The project also explored how countries’ athletes progress through Olympic qualification stages, including the continental and international qualifiers leading up to the Games.
+
+5. **Olympic Stages and Rounds:** The Olympic shooting competition is organized in several stages, with athletes first competing in qualification rounds where they attempt to earn the highest possible score. Depending on the event, athletes must shoot a predetermined number of targets, such as 60 shots in the 10m Air Rifle or 50 shots in the 10m Air Pistol. After these qualification rounds, the top athletes advance to the final stage, where they compete in a more intense, pressure-filled environment. The final round often involves a smaller set of shots, with the top shooters being awarded medals based on their performance. We examined how different rounds are structured and the scoring systems employed to ensure fairness and excitement in the competition.
+
+6. **Global Medal Distribution:** We analyzed how medals are distributed across countries and identified key trends in the performances of nations. By looking at the global spread of Olympic medals in shooting events, we observed dominant countries such as China, the USA, and Germany, as well as how nations like India and Brazil are making strides in the sport. This exploration not only highlighted the most successful countries but also revealed patterns of growth in less traditionally dominant regions.
+
+
+By analyzing data from the 2024 Olympic Games shooting events, the project offers a comprehensive view of the discipline’s global impact and its role in the Olympic movement. The study not only highlights the diversity and excellence present in the sport but also reinforces the fundamental Olympic ideals of fair competition and global unity. This project serves as an insightful reflection on the intersection of sport, culture, and international collaboration, further emphasizing shooting’s significant place in the Olympic Games.
+
+Overall, we have successfully addressed the main questions from the dataset on shooting events in the 2024 Olympics, providing a valuable understanding of the participation dynamics, performance trends, and the worldwide influence of this prestigious event.
